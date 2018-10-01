@@ -76,7 +76,7 @@ function refreshExtensionList() {
         extensionsList = extensions;
         //Remove this extension from the list
         for(let index in extensionsList){
-            if(extensionsList[index].id == "ifgcaoanjmfgpnkolhcoddhncdphkfnm"){
+            if(extensionsList[index].id == chrome.runtime.id){
                 extensionsList.splice( index, 1 );
             }
         }
