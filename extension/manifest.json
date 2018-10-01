@@ -1,0 +1,20 @@
+{
+  "name": "Extension access control",
+  "version": "1.0",
+  "description": "Configure the websites on which extensions can run",
+  "manifest_version": 2,
+   "permissions": [
+      "activeTab",
+      "storage",
+      "management",
+      "tabs"
+    ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_title": "Manage extensions",
+    "default_popup": "popup.html"
+  }
+}
