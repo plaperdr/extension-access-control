@@ -194,10 +194,10 @@ index 4cfa9efafdda..d241b5b46c56 100644
 +
  #endif  // CHROME_BROWSER_POLICY_CHROME_BROWSER_POLICY_CONNECTOR_H_
 diff --git components/policy/core/common/BUILD.gn components/policy/core/common/BUILD.gn
-index ed59e7b03937..eba220825c30 100644
+index ed59e7b03937..c02481545eed 100644
 --- components/policy/core/common/BUILD.gn
 +++ components/policy/core/common/BUILD.gn
-@@ -89,6 +89,14 @@ source_set("internal") {
+@@ -89,6 +89,10 @@ source_set("internal") {
      "cloud/user_info_fetcher.h",
      "config_dir_policy_loader.cc",
      "config_dir_policy_loader.h",
@@ -205,10 +205,6 @@ index ed59e7b03937..eba220825c30 100644
 +    "config_ext_policy_loader.h",
 +    "config_ext_policy_provider.cc",
 +    "config_ext_policy_provider.h",
-+    "//extensions/browser/value_store/value_store.cc",
-+    "//extensions/browser/value_store/value_store.h",
-+    "//extensions/browser/value_store/value_store_change.cc",
-+    "//extensions/browser/value_store/value_store_change.h",
      "configuration_policy_provider.cc",
      "configuration_policy_provider.h",
      "extension_policy_migrator.cc",
