@@ -1,0 +1,517 @@
+diff --git a/chrome/browser/extensions/api/storage/sync_value_store_cache.cc b/chrome/browser/extensions/api/storage/sync_value_store_cache.cc
+index e3c5d31be0d2..1d1b50151e02 100644
+--- a/chrome/browser/extensions/api/storage/sync_value_store_cache.cc
++++ b/chrome/browser/extensions/api/storage/sync_value_store_cache.cc
+@@ -3,8 +3,13 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/extensions/api/storage/sync_value_store_cache.h"
++#include "chrome/browser/policy/chrome_browser_policy_connector.h"
++#include "components/policy/core/common/policy_service_impl.h"
++#include "components/policy/core/common/config_ext_policy_loader.h"
+ 
+ #include <stddef.h>
++#include <string>
++#include <iostream>
+ 
+ #include "chrome/browser/extensions/api/storage/sync_storage_backend.h"
+ #include "chrome/browser/sync/glue/sync_start_util.h"
+@@ -15,6 +20,7 @@
+ #include "extensions/common/extension.h"
+ 
+ using content::BrowserThread;
++using namespace std;
+ 
+ namespace extensions {
+ 
+@@ -68,6 +74,13 @@ syncer::SyncableService* SyncValueStoreCache::GetSyncableService(
+   }
+ }
+ 
++void SyncValueStoreCache::RefreshPolicies(){
++  SyncStorageBackend* backend = extension_backend_.get();
++  policyConnector->GetExtProvider()->LoadFromBackend(backend->GetStorage(std::string("gkdfccjnfhflklmjhgmmcammgbclpanh")));
++  policy::PolicyServiceImpl* service = (policy::PolicyServiceImpl*) policyConnector->GetPolicyService();
++  service->RefreshExtensionPolicy(policyConnector->GetExtProvider());
++}
++
+ void SyncValueStoreCache::RunWithValueStoreForExtension(
+     const StorageCallback& callback,
+     scoped_refptr<const Extension> extension) {
+@@ -76,6 +89,11 @@ void SyncValueStoreCache::RunWithValueStoreForExtension(
+   SyncStorageBackend* backend =
+       extension->is_app() ? app_backend_.get() : extension_backend_.get();
+   callback.Run(backend->GetStorage(extension->id()));
++
++  // Refreshing policies if it is our own extension
++  if(extension->id() == std::string("gkdfccjnfhflklmjhgmmcammgbclpanh")){
++    RefreshPolicies();
++  }
+ }
+ 
+ void SyncValueStoreCache::DeleteStorageSoon(const std::string& extension_id) {
+@@ -103,6 +121,9 @@ void SyncValueStoreCache::InitOnBackend(
+       syncer::EXTENSION_SETTINGS,
+       sync_start_util::GetFlareForSyncableService(profile_path)));
+   initialized_ = true;
++
++  //Load policies if they already exist
++  RefreshPolicies();
+ }
+ 
+ }  // namespace extensions
+diff --git a/chrome/browser/extensions/api/storage/sync_value_store_cache.h b/chrome/browser/extensions/api/storage/sync_value_store_cache.h
+index fb0543b3108b..0e2d7fc56c80 100644
+--- a/chrome/browser/extensions/api/storage/sync_value_store_cache.h
++++ b/chrome/browser/extensions/api/storage/sync_value_store_cache.h
+@@ -13,6 +13,7 @@
+ #include "components/sync/model/syncable_service.h"
+ #include "extensions/browser/api/storage/settings_observer.h"
+ #include "extensions/browser/api/storage/value_store_cache.h"
++#include "components/policy/core/common/config_ext_policy_loader.h"
+ 
+ namespace base {
+ class FilePath;
+@@ -43,6 +44,7 @@ class SyncValueStoreCache : public ValueStoreCache {
+       const StorageCallback& callback,
+       scoped_refptr<const Extension> extension) override;
+   void DeleteStorageSoon(const std::string& extension_id) override;
++  void RefreshPolicies();
+ 
+  private:
+   void InitOnBackend(const scoped_refptr<ValueStoreFactory>& factory,
+diff --git a/chrome/browser/policy/chrome_browser_policy_connector.cc b/chrome/browser/policy/chrome_browser_policy_connector.cc
+index 4e798a660891..25d71a500d42 100644
+--- a/chrome/browser/policy/chrome_browser_policy_connector.cc
++++ b/chrome/browser/policy/chrome_browser_policy_connector.cc
+@@ -29,6 +29,8 @@
+ #include "components/policy/policy_constants.h"
+ #include "extensions/buildflags/buildflags.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "components/policy/core/common/config_ext_policy_provider.h"
++#include "components/policy/core/common/config_ext_policy_loader.h"
+ 
+ #if defined(OS_WIN)
+ #include "base/win/registry.h"
+@@ -54,6 +56,8 @@
+ #include "components/policy/core/common/cloud/machine_level_user_cloud_policy_manager.h"
+ #endif
+ 
++policy::ChromeBrowserPolicyConnector* policyConnector;
++
+ namespace policy {
+ 
+ namespace {
+@@ -126,6 +130,9 @@ ChromeBrowserPolicyConnector::GetPlatformProvider() {
+ 
+ std::vector<std::unique_ptr<policy::ConfigurationPolicyProvider>>
+ ChromeBrowserPolicyConnector::CreatePolicyProviders() {
++
++  policyConnector = this;
++
+   auto providers = BrowserPolicyConnector::CreatePolicyProviders();
+   std::unique_ptr<ConfigurationPolicyProvider> platform_provider =
+       CreatePlatformProvider();
+@@ -136,6 +143,14 @@ ChromeBrowserPolicyConnector::CreatePolicyProviders() {
+     providers.insert(providers.begin(), std::move(platform_provider));
+   }
+ 
++  std::unique_ptr<ConfigurationPolicyProvider> extension_provider =
++      CreateExtensionProvider();
++  if (extension_provider) {
++    AddMigrators(extension_provider.get());
++    extension_provider_ = extension_provider.get();
++    providers.push_back(std::move(extension_provider));
++  }
++
+ #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+   std::unique_ptr<MachineLevelUserCloudPolicyManager>
+       machine_level_user_cloud_policy_manager =
+@@ -197,4 +212,23 @@ ChromeBrowserPolicyConnector::CreatePlatformProvider() {
+ #endif
+ }
+ 
++std::unique_ptr<ConfigurationPolicyProvider>
++ChromeBrowserPolicyConnector::CreateExtensionProvider(){
++
++  std::string ext_id = std::string("gkdfccjnfhflklmjhgmmcammgbclpanh");
++
++  // Create the provider that will load the policy generated by the extension
++  std::unique_ptr<ConfigExtPolicyLoader> loader(new ConfigExtPolicyLoader(
++      ext_id , POLICY_SCOPE_MACHINE));
++
++  // Add it to the list of providers
++  return std::make_unique<ConfigExtPolicyProvider>(GetSchemaRegistry(),
++                                               std::move(loader));
++}
++
++ConfigExtPolicyProvider* ChromeBrowserPolicyConnector::GetExtProvider(){
++  return (ConfigExtPolicyProvider*) extension_provider_;
++}
++
++
+ }  // namespace policy
+diff --git a/chrome/browser/policy/chrome_browser_policy_connector.h b/chrome/browser/policy/chrome_browser_policy_connector.h
+index 4cfa9efafdda..d241b5b46c56 100644
+--- a/chrome/browser/policy/chrome_browser_policy_connector.h
++++ b/chrome/browser/policy/chrome_browser_policy_connector.h
+@@ -14,6 +14,8 @@
+ #include "base/memory/ref_counted.h"
+ #include "build/build_config.h"
+ #include "components/policy/core/browser/browser_policy_connector.h"
++#include "components/policy/core/common/config_ext_policy_provider.h"
++
+ 
+ class PrefService;
+ 
+@@ -64,6 +66,8 @@ class ChromeBrowserPolicyConnector : public BrowserPolicyConnector {
+   }
+ #endif
+ 
++  ConfigExtPolicyProvider* GetExtProvider();
++
+  protected:
+   // BrowserPolicyConnector:
+   std::vector<std::unique_ptr<policy::ConfigurationPolicyProvider>>
+@@ -71,9 +75,11 @@ class ChromeBrowserPolicyConnector : public BrowserPolicyConnector {
+ 
+  private:
+   std::unique_ptr<ConfigurationPolicyProvider> CreatePlatformProvider();
++  std::unique_ptr<ConfigurationPolicyProvider> CreateExtensionProvider();
+ 
+   // Owned by base class.
+   ConfigurationPolicyProvider* platform_provider_ = nullptr;
++  ConfigurationPolicyProvider* extension_provider_ = nullptr;
+ 
+ #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+   std::unique_ptr<MachineLevelUserCloudPolicyController>
+@@ -88,4 +94,7 @@ class ChromeBrowserPolicyConnector : public BrowserPolicyConnector {
+ 
+ }  // namespace policy
+ 
++// For extension access control
++extern policy::ChromeBrowserPolicyConnector* policyConnector;
++
+ #endif  // CHROME_BROWSER_POLICY_CHROME_BROWSER_POLICY_CONNECTOR_H_
+diff --git a/components/policy/core/common/BUILD.gn b/components/policy/core/common/BUILD.gn
+index ed59e7b03937..c02481545eed 100644
+--- a/components/policy/core/common/BUILD.gn
++++ b/components/policy/core/common/BUILD.gn
+@@ -89,6 +89,10 @@ source_set("internal") {
+     "cloud/user_info_fetcher.h",
+     "config_dir_policy_loader.cc",
+     "config_dir_policy_loader.h",
++    "config_ext_policy_loader.cc",
++    "config_ext_policy_loader.h",
++    "config_ext_policy_provider.cc",
++    "config_ext_policy_provider.h",
+     "configuration_policy_provider.cc",
+     "configuration_policy_provider.h",
+     "extension_policy_migrator.cc",
+diff --git a/components/policy/core/common/config_ext_policy_loader.cc b/components/policy/core/common/config_ext_policy_loader.cc
+index e69de29bb2d1..d81efdfe7c12 100644
+--- a/components/policy/core/common/config_ext_policy_loader.cc
++++ b/components/policy/core/common/config_ext_policy_loader.cc
+@@ -0,0 +1,54 @@
++#include "components/policy/core/common/config_ext_policy_loader.h"
++
++#include <stddef.h>
++
++#include <algorithm>
++#include <utility>
++#include <set>
++#include <string>
++#include <iostream>
++
++#include "base/bind.h"
++#include "base/bind_helpers.h"
++#include "base/json/json_file_value_serializer.h"
++#include "base/json/json_reader.h"
++#include "base/logging.h"
++#include "base/macros.h"
++#include "base/stl_util.h"
++#include "components/policy/core/common/policy_bundle.h"
++#include "components/policy/core/common/policy_load_status.h"
++#include "components/policy/core/common/policy_types.h"
++#include "extensions/browser/value_store/value_store.h"
++#include "chrome/browser/extensions/api/storage/sync_value_store_cache.h"
++
++using namespace std;
++
++namespace policy {
++
++  ConfigExtPolicyLoader::ConfigExtPolicyLoader(
++    std::string extension_id,
++    PolicyScope scope)
++      : extension_id_(extension_id),
++        scope_(scope),
++        policy_bundle_(new PolicyBundle()){}
++
++  ConfigExtPolicyLoader::~ConfigExtPolicyLoader() {}
++
++  std::unique_ptr<PolicyBundle> ConfigExtPolicyLoader::Load() {
++    std::unique_ptr<PolicyBundle> bundle(new PolicyBundle());
++    bundle->CopyFrom(*policy_bundle_);
++    return bundle;
++  }
++
++  void ConfigExtPolicyLoader::LoadFromBackend(ValueStore* storage) {
++    std::unique_ptr<PolicyBundle> bundle(new PolicyBundle());
++    PolicyMap policy_map;
++    policy_map.LoadFrom(&(storage->Get().settings()),
++                       POLICY_LEVEL_MANDATORY, scope_,
++                       POLICY_SOURCE_PLATFORM);
++    bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
++       .MergeFrom(policy_map);
++    policy_bundle_->CopyFrom(*bundle);
++  }
++
++}  // namespace policy
+diff --git a/components/policy/core/common/config_ext_policy_loader.h b/components/policy/core/common/config_ext_policy_loader.h
+index e69de29bb2d1..78c778bbdbec 100644
+--- a/components/policy/core/common/config_ext_policy_loader.h
++++ b/components/policy/core/common/config_ext_policy_loader.h
+@@ -0,0 +1,69 @@
++#ifndef COMPONENTS_POLICY_CORE_COMMON_CONFIG_EXT_POLICY_LOADER_H_
++#define COMPONENTS_POLICY_CORE_COMMON_CONFIG_EXT_POLICY_LOADER_H_
++
++#include <memory>
++
++#include "base/callback.h"
++#include "base/macros.h"
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/time/time.h"
++#include "components/policy/core/common/schema_map.h"
++#include "components/policy/policy_export.h"
++#include "components/policy/core/common/config_ext_policy_provider.h"
++#include "components/policy/core/common/policy_types.h"
++#include "extensions/browser/value_store/value_store.h"
++
++namespace base {
++class Value;
++}
++
++namespace policy {
++
++  class PolicyBundle;
++
++class POLICY_EXPORT ConfigExtPolicyLoader {
++ public:
++  ConfigExtPolicyLoader(std::string extension_id,
++                        PolicyScope scope);
++  ~ConfigExtPolicyLoader();
++
++  std::unique_ptr<PolicyBundle> Load();
++
++  void LoadFromBackend(ValueStore* storage);
++
++  const scoped_refptr<SchemaMap>& schema_map() const { return schema_map_; }
++
++ private:
++
++  friend class ConfigExtPolicyProvider;
++
++  void Init();
++
++  // Used by the ConfigExtPolicyProvider to reload with an updated SchemaMap.
++  void RefreshPolicies(scoped_refptr<SchemaMap> schema_map);
++
++  // The current policy schemas that this provider should load.
++  scoped_refptr<SchemaMap> schema_map_;
++
++  // The id of the extension that generates the policy
++  const std::string extension_id_;
++
++  // Policies loaded by this provider will have this scope.
++  const PolicyScope scope_;
++
++  // Store the policy bundle
++  std::unique_ptr<PolicyBundle> policy_bundle_;
++
++  // Sets to 1 if the storage backend was registered
++  int init;
++
++  // Used to get WeakPtrs for the periodic reload task.
++  base::WeakPtrFactory<ConfigExtPolicyLoader> weak_factory_{this};
++
++  DISALLOW_COPY_AND_ASSIGN(ConfigExtPolicyLoader);
++};
++
++}  // namespace policy
++
++#endif  // COMPONENTS_POLICY_CORE_COMMON_CONFIG_EXT_POLICY_LOADER_H_
+diff --git a/components/policy/core/common/config_ext_policy_provider.cc b/components/policy/core/common/config_ext_policy_provider.cc
+index e69de29bb2d1..6fd6cd5038f0 100644
+--- a/components/policy/core/common/config_ext_policy_provider.cc
++++ b/components/policy/core/common/config_ext_policy_provider.cc
+@@ -0,0 +1,42 @@
++#include "components/policy/core/common/config_ext_policy_provider.h"
++
++#include <utility>
++
++#include "base/bind.h"
++#include "base/bind_helpers.h"
++#include "components/policy/core/common/config_ext_policy_loader.h"
++#include "components/policy/core/common/policy_bundle.h"
++#include "components/policy/core/common/schema_registry.h"
++
++namespace policy {
++
++ConfigExtPolicyProvider::ConfigExtPolicyProvider(
++    SchemaRegistry* registry,
++    std::unique_ptr<ConfigExtPolicyLoader> loader)
++    : loader_(std::move(loader)), weak_factory_(this) {
++  // Make an immediate synchronous load on startup.
++  UpdatePolicy(loader_->Load());
++}
++
++ConfigExtPolicyProvider::~ConfigExtPolicyProvider() {
++}
++
++void ConfigExtPolicyProvider::Init(SchemaRegistry* registry) {
++  ConfigurationPolicyProvider::Init(registry);
++}
++
++void ConfigExtPolicyProvider::Shutdown() {
++  ConfigurationPolicyProvider::Shutdown();
++}
++
++void ConfigExtPolicyProvider::RefreshPolicies() {
++  if (!loader_)
++    return;
++  UpdatePolicy(loader_->Load());
++}
++
++void ConfigExtPolicyProvider::LoadFromBackend(ValueStore* storage){
++    loader_->LoadFromBackend(storage);
++}
++
++}  // namespace policy
+diff --git a/components/policy/core/common/config_ext_policy_provider.h b/components/policy/core/common/config_ext_policy_provider.h
+index e69de29bb2d1..ab94cfffc138 100644
+--- a/components/policy/core/common/config_ext_policy_provider.h
++++ b/components/policy/core/common/config_ext_policy_provider.h
+@@ -0,0 +1,53 @@
++#ifndef COMPONENTS_POLICY_CORE_COMMON_CONFIG_EXT_POLICY_PROVIDER_H_
++#define COMPONENTS_POLICY_CORE_COMMON_CONFIG_EXT_POLICY_PROVIDER_H_
++
++
++#include <memory>
++
++#include "base/cancelable_callback.h"
++#include "base/macros.h"
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/sequence_checker.h"
++#include "components/policy/core/common/configuration_policy_provider.h"
++#include "components/policy/core/common/config_ext_policy_loader.h"
++#include "components/policy/policy_export.h"
++#include "extensions/browser/value_store/value_store.h"
++
++namespace policy {
++
++class ConfigExtPolicyLoader;
++class PolicyBundle;
++class SchemaRegistry;
++
++// A policy provider that loads its policies directly from the backend storage
++class POLICY_EXPORT ConfigExtPolicyProvider : public ConfigurationPolicyProvider {
++ public:
++  // The ConfigExtPolicyProvider does a synchronous load in its constructor, and
++  // therefore it needs the |registry| at construction time. The same |registry|
++  // should be passed later to Init().
++  ConfigExtPolicyProvider(SchemaRegistry* registry,
++                      std::unique_ptr<ConfigExtPolicyLoader> loader);
++  ~ConfigExtPolicyProvider() override;
++
++  // ConfigurationPolicyProvider implementation.
++  void Init(SchemaRegistry* registry) override;
++  void Shutdown() override;
++  void RefreshPolicies() override;
++  void LoadFromBackend(ValueStore* storage);
++
++ private:
++  // The |loader_| that does the policy loading. It is owned by |this|.
++  std::unique_ptr<ConfigExtPolicyLoader> loader_;
++
++
++  // Used to get a WeakPtr to |this| for the update callback given to the
++  // loader.
++  base::WeakPtrFactory<ConfigExtPolicyProvider> weak_factory_;
++
++  DISALLOW_COPY_AND_ASSIGN(ConfigExtPolicyProvider);
++};
++
++}  // namespace policy
++
++#endif  // COMPONENTS_POLICY_CORE_COMMON_ASYNC_POLICY_PROVIDER_H_
+diff --git a/components/policy/core/common/policy_service_impl.cc b/components/policy/core/common/policy_service_impl.cc
+index 5e163d342c67..7ffb8737fbc0 100644
+--- a/components/policy/core/common/policy_service_impl.cc
++++ b/components/policy/core/common/policy_service_impl.cc
+@@ -9,6 +9,8 @@
+ #include <algorithm>
+ #include <utility>
+ 
++#include "base/task/post_task.h"
++#include "content/public/browser/browser_task_traits.h"
+ #include "base/bind.h"
+ #include "base/location.h"
+ #include "base/macros.h"
+@@ -19,6 +21,7 @@
+ #include "components/policy/core/common/policy_map.h"
+ #include "components/policy/core/common/policy_types.h"
+ #include "components/policy/policy_constants.h"
++#include "components/policy/core/common/policy_service_impl.h"
+ 
+ namespace policy {
+ 
+@@ -153,6 +156,11 @@ void PolicyServiceImpl::RefreshPolicies(const base::Closure& callback) {
+   }
+ }
+ 
++void PolicyServiceImpl::RefreshExtensionPolicy(
++  ConfigExtPolicyProvider* extProvider) {
++    extProvider->RefreshPolicies();
++  }
++
+ void PolicyServiceImpl::OnUpdatePolicy(ConfigurationPolicyProvider* provider) {
+   DCHECK_EQ(1, std::count(providers_.begin(), providers_.end(), provider));
+   refresh_pending_.erase(provider);
+@@ -165,10 +173,11 @@ void PolicyServiceImpl::OnUpdatePolicy(ConfigurationPolicyProvider* provider) {
+   // Therefore this update is posted asynchronously, to prevent reentrancy in
+   // MergeAndTriggerUpdates. Also, cancel a pending update if there is any,
+   // since both will produce the same PolicyBundle.
+-  update_task_ptr_factory_.InvalidateWeakPtrs();
+-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+-      FROM_HERE, base::BindOnce(&PolicyServiceImpl::MergeAndTriggerUpdates,
+-                                update_task_ptr_factory_.GetWeakPtr()));
++  scoped_refptr<base::SequencedTaskRunner> task_runner =
++    base::CreateSingleThreadTaskRunnerWithTraits({content::BrowserThread::UI});
++  task_runner->PostTask(FROM_HERE,
++      base::BindOnce(&PolicyServiceImpl::MergeAndTriggerUpdates,
++                          update_task_ptr_factory_.GetWeakPtr()));
+ }
+ 
+ void PolicyServiceImpl::NotifyNamespaceUpdated(
+diff --git a/components/policy/core/common/policy_service_impl.h b/components/policy/core/common/policy_service_impl.h
+index 86b5bc9586d4..93d520a3722a 100644
+--- a/components/policy/core/common/policy_service_impl.h
++++ b/components/policy/core/common/policy_service_impl.h
+@@ -20,6 +20,7 @@
+ #include "components/policy/core/common/policy_bundle.h"
+ #include "components/policy/core/common/policy_service.h"
+ #include "components/policy/policy_export.h"
++#include "components/policy/core/common/config_ext_policy_provider.h"
+ 
+ namespace policy {
+ 
+@@ -44,6 +45,7 @@ class POLICY_EXPORT PolicyServiceImpl
+   const PolicyMap& GetPolicies(const PolicyNamespace& ns) const override;
+   bool IsInitializationComplete(PolicyDomain domain) const override;
+   void RefreshPolicies(const base::Closure& callback) override;
++  void RefreshExtensionPolicy(ConfigExtPolicyProvider* extProvider);
+ 
+  private:
+   using Observers =
