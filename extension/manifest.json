@@ -17,5 +17,14 @@
     "default_title": "Manage extensions",
     "default_popup": "popup.html"
   },
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoEpsCCnQHUnBK1W2aH+jX/UqLROKzjPHLVNaG7PizHWDDhOGYcj875hNa08HhgYqwz0f/FWgvDMDix6TR3ArRxmWPuYSwaDO1pEVlIE7+vHZ86MCGi/ui3amCSwuBSdEnQIv3DGp5FhS+f4TiHSLsI6yA38/BXaCaM9LHKjj1if4f5VoxbNe0PwuufwW+qdm9YyO7RJ+qbhlQyeHg5mPA2Nytbzct4ObRz2Lfj+9n1TCDlwl8/SbJtJ7+wn7je4Y+0zqLo8Ca4wCusvgJmevL5y80dY4sEz4iVHxcvtF5QLdFKpgNQWQlfROwvXG+jc6idkGE9Z9XZzWaTAiMiMv2wIDAQAB"
+  "content_scripts": [
+   {
+     "matches": ["*://*/*"],
+     "js": ["contentScript.js"],
+     "run_at": "document_end",
+     "all_frames": true
+   }
+ ],
+ "options_page": "options.html",
+ "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoEpsCCnQHUnBK1W2aH+jX/UqLROKzjPHLVNaG7PizHWDDhOGYcj875hNa08HhgYqwz0f/FWgvDMDix6TR3ArRxmWPuYSwaDO1pEVlIE7+vHZ86MCGi/ui3amCSwuBSdEnQIv3DGp5FhS+f4TiHSLsI6yA38/BXaCaM9LHKjj1if4f5VoxbNe0PwuufwW+qdm9YyO7RJ+qbhlQyeHg5mPA2Nytbzct4ObRz2Lfj+9n1TCDlwl8/SbJtJ7+wn7je4Y+0zqLo8Ca4wCusvgJmevL5y80dY4sEz4iVHxcvtF5QLdFKpgNQWQlfROwvXG+jc6idkGE9Z9XZzWaTAiMiMv2wIDAQAB"
 }

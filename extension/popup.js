@@ -22,7 +22,7 @@ function addAllExtensions() {
             let e = extensions[i];
 
             //Get the settings from the background script
-            addExtension(e.name, e.id, true);
+            addExtension(e.name, e.id, mode !== "strict");
         }
     }
 }
@@ -45,6 +45,9 @@ function addExtension(name, id, enabled) {
 //Get the background page
 var background = chrome.extension.getBackgroundPage();
 
+//Get the current mode
+var mode = background.getMode();
+
 //Get the URL of the open tab
 var url;
 chrome.tabs.query({ active: true, currentWindow: true }, function(tabs){
@@ -57,6 +60,7 @@ chrome.tabs.query({ active: true, currentWindow: true }, function(tabs){
         document.getElementById("url").textContent = "Not a valid URL";
         $("#myTable").hide();
         $("#btnGroup").hide();
+        $("#settings").hide();
     }
 });
 
@@ -75,6 +79,10 @@ function setup() {
             //Send this to be saved
             background.saveWebsiteSettings(url,list);
         });
+
+        //When the settings button is clicked, we open the options
+        $("#settings").click(function() {
+            chrome.runtime.openOptionsPage();
+        });
     });
 }
-

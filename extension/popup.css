@@ -22,3 +22,8 @@ body, section {			/* Change width and height to own preferences */
 section { padding: 5px;}
 .navbar { margin-bottom: 2px; }
 
+.topcorner{
+   position:absolute;
+   top:10px;
+   right:10px;
+}
