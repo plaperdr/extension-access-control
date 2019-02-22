@@ -60,7 +60,7 @@ To run our modified browser, you need to follow the instructions below:
 chrome://extensions/
 ``` 
 4. Click on the far right of the windown to enable "Developer mode".
-5. Click on "Load unpacked" and load the folder "extension" that is in the zip file you downloaded in the first step.
+5. Click on "Load unpacked" button and load the "extension" folder that is in the zip file you downloaded in the first step.
 
 The extension should appear in the tool bar on the top right of the screen! You shoud now have access to our extension 
 access control mechanism!
