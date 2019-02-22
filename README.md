@@ -14,7 +14,7 @@ not only from fingerprinting, but also from malicious extensions exfiltrating us
 The modified browser is explained in greater details in the [published article](https://www.securitee.org/files/extensionbloat_www2019.pdf).
 
 
-### The patch
+### The patch
 The **chromium71.patch** file contains the complete list of modifications brought to Chromium. 
 The patch is structured as follows:
 * [From line 1 to 82](https://github.com/plaperdr/extension-access-control/blob/master/patch/chromium71.patch#L1) -
